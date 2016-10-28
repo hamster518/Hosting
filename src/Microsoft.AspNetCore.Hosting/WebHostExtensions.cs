@@ -2,6 +2,9 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+#if NETSTANDARD1_5
+using System.Runtime.Loader;
+#endif
 using System.Threading;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,18 +19,32 @@ namespace Microsoft.AspNetCore.Hosting
         /// <param name="host">The <see cref="IWebHost"/> to run.</param>
         public static void Run(this IWebHost host)
         {
+            var done = new ManualResetEvent(false);
             using (var cts = new CancellationTokenSource())
             {
+                Action shutdown = () =>
+                {
+                    if (!cts.IsCancellationRequested)
+                    {
+                        Console.WriteLine("Application is shutting down...");
+                        cts.Cancel();
+                    }
+
+                    done.WaitOne();
+                };
+
+#if NETSTANDARD1_5
+                AssemblyLoadContext.Default.Unloading += context => shutdown();
+#endif
                 Console.CancelKeyPress += (sender, eventArgs) =>
                 {
-                    Console.WriteLine("Application is shutting down...");
-                    cts.Cancel();
-
+                    shutdown();
                     // Don't terminate the process immediately, wait for the Main thread to exit gracefully.
                     eventArgs.Cancel = true;
                 };
 
                 host.Run(cts.Token, "Application started. Press Ctrl+C to shut down.");
+                done.Set();
             }
         }
 
